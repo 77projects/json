@@ -1,0 +1,52 @@
+{
+  "name": "Synapse Daily Satire",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {"interval": [{"hour": 9, "timezone": "America/Los_Angeles"}]}
+      },
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{ json: { topic: 'squirrel olympics' } }];"
+      },
+      "name": "Random Topic",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "prompt": "Write a 200-word satirical article about {{ $json.topic }}. Start with a headline."
+      },
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {"openAiApi": "Your OpenAI API Key"}
+    },
+    {
+      "parameters": {
+        "text": "{{ $node['OpenAI'].json.choices[0].text.split('\n')[0] }} - https://gnnnews4u.com/web/this.html"
+      },
+      "name": "Post to X",
+      "type": "n8n-nodes-base.twitter",
+      "typeVersion": 1,
+      "position": [850, 200],
+      "credentials": {"twitterOAuth1Api": "Your X API Credentials"}
+    }
+  ],
+  "connections": {
+    "Cron": {"main": [{"node": "Random Topic", "type": "main", "index": 0}]},
+    "Random Topic": {"main": [{"node": "OpenAI", "type": "main", "index": 0}]},
+    "OpenAI": {"main": [{"node": "Post to X", "type": "main", "index": 0}]}
+  },
+  "active": false,
+  "settings": {},
+  "id": null
+}
