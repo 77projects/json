@@ -3,50 +3,77 @@
   "nodes": [
     {
       "parameters": {
-        "rule": {"interval": [{"hour": 9, "timezone": "America/Los_Angeles"}]}
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 9,
+              "minute": 0,
+              "timezone": "America/Los_Angeles"
+            }
+          ]
+        }
       },
+      "id": "cron-001",
       "name": "Cron",
-      "type": "n8n-nodes-base.cron",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 2,
       "position": [250, 300]
     },
     {
       "parameters": {
-        "functionCode": "return [{ json: { topic: 'squirrel olympics' } }];"
-      },
-      "name": "Random Topic",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [450, 300]
-    },
-    {
-      "parameters": {
         "model": "gpt-3.5-turbo",
-        "prompt": "Write a 200-word satirical article about {{ $json.topic }}. Start with a headline."
+        "prompt": "Write a 200-word satirical news article about 'squirrel olympics' in an Onion-like tone. Start with a headline followed by a newline."
       },
+      "id": "openai-001",
       "name": "OpenAI",
       "type": "n8n-nodes-base.openAi",
-      "typeVersion": 1,
-      "position": [650, 300],
-      "credentials": {"openAiApi": "Your OpenAI API Key"}
+      "typeVersion": 2,
+      "position": [450, 300],
+      "credentials": {
+        "openAiApi": "Your OpenAI API Key"
+      }
     },
     {
       "parameters": {
-        "text": "{{ $node['OpenAI'].json.choices[0].text.split('\n')[0] }} - https://gnnnews4u.com/web/this.html"
+        "text": "{{ $node['OpenAI'].json.choices[0].message.content.split('\n')[0] }} - https://gnnnews4u.com/web/this.html"
       },
+      "id": "twitter-001",
       "name": "Post to X",
-      "type": "n8n-nodes-base.twitter",
-      "typeVersion": 1,
-      "position": [850, 200],
-      "credentials": {"twitterOAuth1Api": "Your X API Credentials"}
+      "type": "n8n-nodes-base.x",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "xOAuth2Api": "Your X API Credentials"
+      }
     }
   ],
   "connections": {
-    "Cron": {"main": [{"node": "Random Topic", "type": "main", "index": 0}]},
-    "Random Topic": {"main": [{"node": "OpenAI", "type": "main", "index": 0}]},
-    "OpenAI": {"main": [{"node": "Post to X", "type": "main", "index": 0}]}
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Post to X",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "active": false,
-  "settings": {},
-  "id": null
+  "settings": {
+    "saveExecutionProgress": false,
+    "timezone": "America/Los_Angeles"
+  },
+  "active": false
 }
