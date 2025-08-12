@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Neon Fractal FPS</title>
+<title>Neon Fractal FPS - Fixed FPS</title>
 <style>
   body, html {
     margin: 0; padding: 0; overflow: hidden; background: #000;
@@ -56,12 +56,14 @@
     image-rendering: pixelated;
   }
   #fpsCounter {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    color: #0ff;
-    font-weight: bold;
-    font-family: monospace;
+    position: fixed !important;
+    top: 10px !important;
+    right: 10px !important;
+    font-size: 24px !important;
+    color: #0ff !important;
+    z-index: 9999 !important;
+    user-select: none !important;
+    pointer-events: none !important;
   }
 </style>
 </head>
@@ -101,7 +103,8 @@
       return Math.floor(this.nextRange(min, max+1));
     }
   }
-  // Globals
+
+   // Globals
   let scene, camera, renderer, controls;
   let fractalGroup;
   let enemies = [];
@@ -268,8 +271,8 @@
     };
     scene.add(bullet);
     bullets.push(bullet);
-      }
-  // Handle collisions bullet <-> enemy
+  }
+    // Handle collisions bullet <-> enemy
   function checkBulletEnemyCollisions() {
     bullets.forEach(bullet => {
       if(!bullet.userData.alive) return;
@@ -290,7 +293,7 @@
     bullets = bullets.filter(b => b.userData.alive);
   }
 
-  // Animate loop with fixed FPS calculation
+  // Animate loop with fixed FPS calculation and debug log
   let lastFrameTime = performance.now();
   let frameCount = 0;
   let fps = 0;
@@ -309,6 +312,7 @@
     if(fpsTimer >= 1) {
       fps = frameCount;
       fpsCounter.textContent = "FPS: " + fps;
+      console.log("FPS:", fps);  // DEBUG: Check console for updates
       frameCount = 0;
       fpsTimer = 0;
     }
@@ -325,7 +329,6 @@
     // Update bullets
     bullets.forEach(bullet => {
       bullet.position.addScaledVector(bullet.userData.velocity, deltaTime);
-      // Remove bullet if too far
       if(bullet.position.distanceTo(camera.position) > 100) {
         bullet.userData.alive = false;
         scene.remove(bullet);
@@ -333,17 +336,15 @@
     });
     bullets = bullets.filter(b => b.userData.alive);
 
-    // Check bullet-enemy collisions
     checkBulletEnemyCollisions();
 
-    // Simple enemy AI - move toward player if alive
+    // Simple enemy AI
     enemies.forEach(enemy => {
       if(!enemy.userData.alive) return;
       const dir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
       enemy.position.addScaledVector(dir, 2 * deltaTime);
     });
 
-    // Reduce bullet cooldown
     if(player.bulletCooldown > 0) {
       player.bulletCooldown -= deltaTime;
     }
@@ -367,48 +368,34 @@
 
   // Setup fractal and rooms
   function setupGame(seedStr, depth) {
-    if(scene) {
-      // cleanup previous scene children except camera & controls
-      while(scene.children.length > 0) {
-        let child = scene.children[0];
-        if(child.type === "PerspectiveCamera" || (child.type === "Group" && child === controls.getObject())) {
-          break;
-        }
-        scene.remove(child);
-      }
-    }
+    // Clean up old scene children except camera and controls
+    scene.children = scene.children.filter(child => child.type === "PerspectiveCamera" || child === controls.getObject());
 
     rng = new RNG(parseInt(seedStr) || 12345);
     fractalGroup = new THREE.Group();
     scene.add(fractalGroup);
 
-    // Create fractal tunnel
     fractalGroup.add(createFractalTunnel(depth));
 
-    // Create rooms on tunnel
     enemies = [];
     for(let i=1; i<=depth; i++) {
       const room = createRoom(parseInt(seedStr), i);
       fractalGroup.add(room);
     }
 
-    // Generate weapon based on seed
     currentWeapon = generateWeapon(parseInt(seedStr));
     drawWeapon();
 
-    // Reset player position
     controls.getObject().position.set(0, 0, 2);
     camera.position.copy(controls.getObject().position);
   }
 
-  // Start button click
   startBtn.onclick = () => {
     const seed = seedInput.value.trim() || "12345";
     const depth = Math.min(Math.max(parseInt(depthInput.value) || 3, 1), 10);
     setupGame(seed, depth);
   };
 
-  // Initialize everything
   function init() {
     initThree();
     clock = new THREE.Clock();
@@ -421,3 +408,4 @@
 
 </body>
 </html>
+
