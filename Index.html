@@ -1,648 +1,419 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Fractal Tunnel FPS — Neon LowPoly (Desktop)</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Neon Fractal FPS</title>
 <style>
-  :root{
-    --panel-bg: rgba(6,6,12,0.6);
-    --accent: #66f0ff;
-    --accent-2: #ff66f0;
-    --text: #eaf6ff;
+  body, html {
+    margin: 0; padding: 0; overflow: hidden; background: #000;
+    font-family: 'Orbitron', sans-serif;
+    color: #0ff;
+    user-select: none;
   }
-  html,body{height:100%;margin:0;background:#000;overflow:hidden;font-family:Inter,Segoe UI,Roboto,system-ui,Arial;}
-  #container{width:100%;height:100%;position:relative;touch-action:none}
-  canvas{display:block}
-  #ui {
-    position: absolute; left: 12px; top: 12px; z-index: 40;
-    background: var(--panel-bg); padding: 10px; border-radius: 10px;
-    color: var(--text); backdrop-filter: blur(6px);
-    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
-    min-width: 320px;
+  #overlay {
+    position: absolute;
+    top: 10px; left: 10px;
+    z-index: 10;
+    background: rgba(0,0,0,0.6);
+    padding: 10px;
+    border-radius: 8px;
   }
-  #ui h1{margin:0 0 8px 0;font-size:16px;color:var(--accent)}
-  #ui .row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
-  input[type="number"]{width:120px;padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:#081018;color:var(--text)}
-  button{padding:8px 10px;border-radius:8px;border:0;background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#041018;font-weight:700;cursor:pointer}
-  button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--text);font-weight:600}
-  #hud {
-    position:absolute; right:12px; top:12px; z-index:40;
-    background: rgba(0,0,0,0.35); padding:8px 10px; border-radius:8px; color:var(--text);
-    display:flex; gap:12px; align-items:center; font-family:monospace;
+  #seedInput, #depthInput {
+    width: 140px;
+    background: #111;
+    border: 1px solid #0ff;
+    color: #0ff;
+    font-family: 'Orbitron', monospace;
+    font-size: 14px;
+    padding: 4px;
+    margin-bottom: 6px;
   }
-  #infoBar{position:absolute;left:12px;bottom:12px;color:rgba(230,250,255,0.9);z-index:40;font-size:13px;background:rgba(0,0,0,0.25);padding:8px;border-radius:8px}
-  .small{font-size:12px;color:#9fb6c7}
-  /* pointerlock hint */
-  #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:18vh;color:rgba(200,220,255,0.9);font-size:13px;z-index:40;padding:8px 12px;background:rgba(0,0,0,0.25);border-radius:8px}
+  button {
+    background: #0ff;
+    border: none;
+    color: #000;
+    font-weight: bold;
+    font-family: 'Orbitron', monospace;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 6px;
+    margin-left: 4px;
+  }
+  button:hover {
+    background: #0cc;
+  }
+  #weapon {
+    position: absolute;
+    bottom: 20px;
+    right: 40px;
+    width: 180px;
+    height: 100px;
+    pointer-events: none;
+  }
+  #weapon canvas {
+    width: 100%; height: 100%;
+    image-rendering: pixelated;
+  }
+  #fpsCounter {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    color: #0ff;
+    font-weight: bold;
+    font-family: monospace;
+  }
 </style>
 </head>
 <body>
-<div id="container"></div>
 
-<div id="ui">
-  <h1>Fractal Tunnel FPS (neon)</h1>
-  <div class="row">
-    <label>Seed <input id="seedInput" type="number" placeholder="12345" /></label>
-    <label>Depth <input id="depthInput" type="number" min="1" max="10" value="2" /></label>
-    <button id="enterBtn">Enter Portal</button>
-  </div>
-  <div class="row">
-    <button class="secondary" id="prevBtn">&larr; Prev Room</button>
-    <button class="secondary" id="nextBtn">Next Room &rarr;</button>
-    <button class="secondary" id="teleportBtn">Teleport to Tunnel Start</button>
-  </div>
-  <div class="small">Tip: Click the screen to lock pointer and look around. WASD to move. Click to shoot.</div>
+<div id="overlay">
+  <div>Seed: <input type="text" id="seedInput" value="12345" /></div>
+  <div>Depth: <input type="number" id="depthInput" value="3" min="1" max="10" /></div>
+  <button id="startBtn">Enter Fractal</button>
 </div>
 
-<div id="hud">
-  <div id="weaponName">Weapon: —</div>
-  <div id="health">HP: 100</div>
-  <div id="monCount">Enemies: 0</div>
-</div>
+<div id="fpsCounter">FPS: 0</div>
 
-<div id="infoBar">Seed: <span id="currentSeed">—</span> • Room Index: <span id="roomIndex">—</span></div>
-<div id="hint">Click to lock pointer — move with WASD</div>
+<canvas id="weapon" width="320" height="180"></canvas>
 
-<!-- Three.js from CDN -->
-<script src="https://cdn.jsdelivr.net/npm/three@0.156.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/PointerLockControls.js"></script>
+
 <script>
-/* ====================
-   Chunk 1 — Scene init
-   ==================== */
-
-const container = document.getElementById('container');
-let renderer, scene, camera, clock, controls;
-
-function initRenderer(){
-  renderer = new THREE.WebGLRenderer({antialias:true});
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.outputColorSpace = THREE.SRGBColorSpace || null;
-  container.appendChild(renderer.domElement);
-  window.addEventListener('resize', onResize);
-}
-
-function onResize(){
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-function initScene(){
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.05, 2000);
-  camera.position.set(0,1.6, 6); // eye height
-  clock = new THREE.Clock();
-
-  // lighting — neon ambient + directional
-  const amb = new THREE.HemisphereLight(0x88ddff, 0x220033, 0.6);
-  scene.add(amb);
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-  dir.position.set(5,10,7);
-  scene.add(dir);
-
-  // FRAMER: simple low-poly floor tunnel placeholder (we'll replace with shader)
-  const tubeGeom = new THREE.CylinderGeometry(6, 6, 120, 32, 1, true);
-  tubeGeom.rotateX(Math.PI/2);
-  tubeGeom.translate(0, 0, -60); // extend forward from origin
-  // simple neon material
-  const tubeMat = new THREE.MeshStandardMaterial({
-    color: 0x001122,
-    emissive: 0x112233,
-    side: THREE.BackSide,
-    metalness: 0.1,
-    roughness: 0.6,
-    transparent: true,
-    opacity: 0.95
-  });
-  const tunnelMesh = new THREE.Mesh(tubeGeom, tubeMat);
-  tunnelMesh.name = "tunnel";
-  scene.add(tunnelMesh);
-
-  // a few neon rings to show movement
-  const ringMat = new THREE.MeshBasicMaterial({color:0x44eaff, transparent:true, opacity:0.12});
-  for(let i=0;i<30;i++){
-    const r = new THREE.RingGeometry(4.8 - (i*0.02), 5.0 - (i*0.02), 64);
-    const m = new THREE.Mesh(r, ringMat);
-    m.rotateX(-Math.PI/2);
-    m.position.z = -i*3 - 5;
-    m.position.y = 0;
-    scene.add(m);
-  }
-
-  // placeholder player weapon viewmodel (will be replaced with low-poly mesh)
-  const vmGeo = new THREE.BoxGeometry(0.14, 0.08, 0.6);
-  const vmMat = new THREE.MeshStandardMaterial({color:0xffffff, emissive:0x66f0ff, metalness:0.5, roughness:0.2});
-  const viewModel = new THREE.Mesh(vmGeo, vmMat);
-  viewModel.position.set(0.3,-0.25,-0.8);
-  viewModel.name = "viewmodel";
-  camera.add(viewModel);
-  scene.add(camera);
-
-  // simple ground marker
-  const markerGeo = new THREE.SphereGeometry(0.08,8,8);
-  const markerMat = new THREE.MeshStandardMaterial({color:0xff66ff, emissive:0x330022});
-  const marker = new THREE.Mesh(markerGeo, markerMat);
-  marker.position.set(0,0,-2);
-  marker.name="marker";
-  scene.add(marker);
-}
-
-function animate(){
-  requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-  // update later (player movement, monsters)
-  renderer.render(scene, camera);
-}
-
-// attach pointerlock controls (simple wrapper)
-function enablePointerLockHint(){
-  const hint = document.getElementById('hint');
-  const canvasEl = renderer.domElement;
-  canvasEl.addEventListener('click', ()=> {
-    canvasEl.requestPointerLock?.();
-    hint.style.display = 'none';
-  });
-  document.addEventListener('pointerlockchange', ()=> {
-    if(document.pointerLockElement === canvasEl) {
-      hint.style.display = 'none';
-    } else {
-      hint.style.display = '';
+(() => {
+  // RNG helper with seed
+  class RNG {
+    constructor(seed) {
+      this.seed = seed % 2147483647;
+      if(this.seed <= 0) this.seed += 2147483646;
     }
-  });
-}
-
-/* UI wiring */
-const seedInput = document.getElementById('seedInput');
-const depthInput = document.getElementById('depthInput');
-const enterBtn = document.getElementById('enterBtn');
-const prevBtn = document.getElementById('prevBtn');
-const nextBtn = document.getElementById('nextBtn');
-const teleportBtn = document.getElementById('teleportBtn');
-const currentSeedEl = document.getElementById('currentSeed');
-const roomIndexEl = document.getElementById('roomIndex');
-
-enterBtn.addEventListener('click', ()=> {
-  const s = parseInt(seedInput.value) || Math.floor(Math.random()*999999);
-  const d = parseInt(depthInput.value) || 1;
-  enterPortal(s, d);
-});
-prevBtn.addEventListener('click', ()=> jumpRoom(-1));
-nextBtn.addEventListener('click', ()=> jumpRoom(1));
-teleportBtn.addEventListener('click', ()=> teleportToStart());
-
-/* Placeholder stubs — filled in later chunks */
-let currentRoomIndex = 0;
-function enterPortal(seed, depth){
-  console.log("enterPortal", seed, depth);
-  currentSeedEl.textContent = seed;
-  // map seeds to room indices on tunnel
-  currentRoomIndex = 0;
-  roomIndexEl.textContent = currentRoomIndex;
-  // spawn room & enemies — implemented in Chunk 3/4
-}
-function jumpRoom(delta){
-  currentRoomIndex += delta;
-  roomIndexEl.textContent = currentRoomIndex;
-  // compute seed based on index and navigate — later chunks
-}
-function teleportToStart(){
-  camera.position.set(0,1.6,6);
-  camera.rotation.set(0,0,0);
-}
-
-/* Initialize everything */
-initRenderer();
-initScene();
-enablePointerLockHint();
-animate();
-
-</script>
-</body>
-/* =========================
-   Chunk 2 — Raymarch Tunnel
-   ========================= */
-
-// --- Tunnel shader (screen-space raymarch) ---
-
-const tunnelVS = `#version 300 es
-precision highp float;
-in vec2 aPos;
-out vec2 vUv;
-void main(){
-  vUv = aPos * 0.5 + 0.5;
-  gl_Position = vec4(aPos, 0.0, 1.0);
-}
-`;
-
-const tunnelFS = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-
-uniform float uTime;
-uniform vec2 uRes;
-uniform vec3 uCamPos;
-uniform mat4 uInvProj;
-uniform mat4 uInvView;
-uniform float uSeed;
-uniform int uDepth;
-uniform int uSteps;
-uniform float uTunnelRadius;
-uniform float uSegmentLen;
-
-// hash / noise
-float hash(float n){ return fract(sin(n)*43758.5453123); }
-float noise(vec3 x){
-  vec3 p = floor(x);
-  vec3 f = fract(x);
-  f = f*f*(3.0-2.0*f);
-  float n = p.x + p.y*57.0 + 113.0*p.z;
-  float res = mix(mix(mix(hash(n+0.0), hash(n+1.0), f.x),
-                      mix(hash(n+57.0), hash(n+58.0), f.x), f.y),
-                  mix(mix(hash(n+113.0), hash(n+114.0), f.x),
-                      mix(hash(n+170.0), hash(n+171.0), f.x), f.y), f.z);
-  return res;
-}
-
-// warp & fractal-like detail
-float fbm(vec3 p){
-  float v=0.0; float a=0.5;
-  for(int i=0;i<4;i++){
-    v += a*noise(p);
-    p *= 2.0;
-    a *= 0.5;
-  }
-  return v;
-}
-
-// tunnel SDF: base cylinder + ripples + rooms along z
-float tunnelSDF(vec3 p){
-  // make tunnel along -Z axis (camera looks toward -Z)
-  // radius modulation by seed & depth
-  float baseR = uTunnelRadius * (1.0 + 0.08*float(uDepth));
-  // ripple from shader noise
-  float ripple = 0.2 * fbm(vec3(p.x*0.6, p.y*0.6, p.z*0.12 + uSeed*0.001 + uTime*0.02));
-  // rooms pattern: periodic expansions at segment intervals, seeded variation
-  float seg = uSegmentLen;
-  float rz = mod(p.z + seg*1000.0, seg) - seg*0.5; // centered segment coordinate
-  float roomPulse = exp(-abs(rz)*0.6) * (0.8 + 0.4*sin(uSeed*0.001 + floor((p.z+1000.0)/seg)*0.5));
-  float r = baseR * (1.0 + ripple + roomPulse);
-  float d = length(p.xy) - r;
-  // add small protrusions for fractal feel
-  float detail = fbm(p*1.7 + vec3(0.0,0.0,uTime*0.1)) * 0.15;
-  return d - detail;
-}
-
-// estimate normal
-vec3 estimateNormal(vec3 p){
-  float e = 0.002;
-  return normalize(vec3(
-    tunnelSDF(p + vec3(e,0,0)) - tunnelSDF(p - vec3(e,0,0)),
-    tunnelSDF(p + vec3(0,e,0)) - tunnelSDF(p - vec3(0,e,0)),
-    tunnelSDF(p + vec3(0,0,e)) - tunnelSDF(p - vec3(0,0,e))
-  ));
-}
-
-// lighting (neon rim + center)
-vec3 shade(vec3 p, vec3 n, vec3 rd){
-  // neon rim based on normal vs view
-  float rim = pow(1.0 - max(dot(n, -rd), 0.0), 2.4);
-  vec3 colBase = vec3(0.04, 0.02, 0.08); // dark base
-  // color variations by z and seed
-  float t = fract(uSeed*0.00012 + p.z*0.02 + uTime*0.03);
-  vec3 neon = mix(vec3(0.3,0.9,1.0), vec3(1.0,0.4,0.9), t);
-  vec3 glow = neon * rim * 2.5;
-  // center light along axis
-  float center = exp(-length(p.xy)*0.5);
-  vec3 centerColor = neon * center * 0.6;
-  // subtle banding by room index
-  float band = smoothstep(0.2, 0.8, abs(sin(p.z * 0.5 + uSeed*0.0007)));
-  vec3 bandColor = mix(vec3(0.05,0.02,0.1), neon*0.5, band*0.8);
-  return clamp(colBase + glow + centerColor + bandColor*0.6, 0.0, 1.8);
-}
-
-void main(){
-  // reconstruct ray in world space from inv proj and inv view
-  vec2 uv = (vUv * 2.0 - 1.0);
-  vec4 clip = vec4(uv, -1.0, 1.0);
-  vec4 viewPos = uInvProj * clip;
-  viewPos /= viewPos.w;
-  vec4 worldPos = uInvView * viewPos;
-  vec3 ro = uCamPos;
-  vec3 rd = normalize(worldPos.xyz - ro);
-
-  // march along ray
-  float t = 0.0;
-  float dist = -1.0;
-  vec3 pHit = vec3(0.0);
-  for(int i=0;i<200;i++){
-    if(i >= uSteps) break;
-    vec3 p = ro + rd * t;
-    // push sample a bit forward so camera inside tunnel sees inner walls quickly
-    float d = tunnelSDF(p);
-    if(d < 0.001){
-      dist = t; pHit = p; break;
+    next() {
+      return this.seed = this.seed * 16807 % 2147483647;
     }
-    t += d;
-    if(t > 150.0) break;
+    nextFloat() {
+      return (this.next() - 1) / 2147483646;
+    }
+    nextRange(min, max) {
+      return min + this.nextFloat() * (max - min);
+    }
+    nextInt(min, max) {
+      return Math.floor(this.nextRange(min, max+1));
+    }
   }
+  // Globals
+  let scene, camera, renderer, controls;
+  let fractalGroup;
+  let enemies = [];
+  let bullets = [];
+  let clock, deltaTime;
+  let rng;
+  let player = {
+    velocity: new THREE.Vector3(),
+    speed: 6,
+    bulletCooldown: 0,
+    hp: 100,
+  };
+  let weapons = [
+    { name:"Laser Blaster", color:"#0ff", bulletSpeed:70, bulletSize:0.1, damage:10, beam:false, flamethrower:false },
+    { name:"Flame Thrower", color:"#f50", bulletSpeed:40, bulletSize:0.15, damage:2, beam:false, flamethrower:true },
+    { name:"Neon Cannon", color:"#f0f", bulletSpeed:50, bulletSize:0.3, damage:20, beam:false, flamethrower:false },
+    { name:"Focused Beam", color:"#ff0", bulletSpeed:100, bulletSize:0.05, damage:5, beam:true, flamethrower:false }
+  ];
+  let currentWeapon;
+  let weaponCanvas, weaponCtx;
 
-  if(dist > 0.0){
-    vec3 n = estimateNormal(pHit);
-    vec3 color = shade(pHit, n, rd);
-    // add post fx: vignette and slight chroma shift
-    float vign = smoothstep(1.6, 0.0, length(vUv - 0.5));
-    color *= mix(0.8, 1.0, vign);
-    // add small grain
-    float g = (hash(uTime + pHit.z) - 0.5)*0.02;
-    color += g;
-    fragColor = vec4(color, 1.0);
-  } else {
-    // fallback background gradient
-    vec3 bg = vec3(0.01,0.02,0.03) + 0.12 * vec3(0.2 + 0.8 * sin(uTime*0.3 + uSeed*0.0004 + vUv.x*6.0),
-                                                 0.2 + 0.8 * cos(uTime*0.4 + vUv.y*5.0),
-                                                 0.3 + 0.7 * sin(uTime*0.2 + vUv.x*4.0));
-    fragColor = vec4(bg, 1.0);
-  }
-}
-`;
+  // HTML elements
+  const seedInput = document.getElementById("seedInput");
+  const depthInput = document.getElementById("depthInput");
+  const startBtn = document.getElementById("startBtn");
+  const fpsCounter = document.getElementById("fpsCounter");
+  weaponCanvas = document.getElementById("weapon");
+  weaponCtx = weaponCanvas.getContext("2d");
 
-// Build shader material and full-screen quad
-const tunnelUniforms = {
-  uTime: {value: 0.0},
-  uRes: {value: new THREE.Vector2(window.innerWidth, window.innerHeight)},
-  uCamPos: {value: new THREE.Vector3()},
-  uInvProj: {value: new THREE.Matrix4()},
-  uInvView: {value: new THREE.Matrix4()},
-  uSeed: {value: 1234.0},
-  uDepth: {value: 2},
-  uSteps: {value: 80},
-  uTunnelRadius: {value: 5.0},
-  uSegmentLen: {value: 8.0}
-};
+  // Init three.js
+  function initThree() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+    controls = new THREE.PointerLockControls(camera, document.body);
+    scene.add(controls.getObject());
 
-const tunnelMat = new THREE.RawShaderMaterial({
-  vertexShader: tunnelVS,
-  fragmentShader: tunnelFS,
-  uniforms: tunnelUniforms,
-  glslVersion: THREE.GLSL3,
-  depthWrite: false,
-  depthTest: false,
-});
-
-const quadGeo = new THREE.BufferGeometry();
-const quadVerts = new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]);
-quadGeo.setAttribute('aPos', new THREE.BufferAttribute(quadVerts, 2));
-const tunnelQuad = new THREE.Mesh(quadGeo, tunnelMat);
-tunnelQuad.frustumCulled = false;
-tunnelQuad.renderOrder = -999; // render first (as background)
-scene.add(tunnelQuad);
-
-// Hook seed/depth controls to shader uniforms
-function setTunnelSeedDepth(seedVal, depthVal){
-  tunnelUniforms.uSeed.value = seedVal;
-  tunnelUniforms.uDepth.value = depthVal;
-  // tune radius/segment by depth for interesting variety
-  tunnelUniforms.uTunnelRadius.value = 4.0 + depthVal*0.8;
-  tunnelUniforms.uSegmentLen.value = 8.0 - Math.min(6, depthVal*0.6);
-}
-
-// In render loop (animate) update shader uniforms each frame
-const _invProj = new THREE.Matrix4();
-const _invView = new THREE.Matrix4();
-function updateTunnelUniforms(timeSec){
-  tunnelUniforms.uTime.value = timeSec;
-  tunnelUniforms.uRes.value.set(window.innerWidth, window.innerHeight);
-  tunnelUniforms.uCamPos.value.copy(camera.position);
-  // inverse projection and inverse view (camera.matrixWorld is inverse of view)
-  _invProj.copy(camera.projectionMatrix).invert();
-  _invView.copy(camera.matrixWorld); // camera.matrixWorld = inverse(viewMatrix)
-  tunnelUniforms.uInvProj.value.copy(_invProj);
-  tunnelUniforms.uInvView.value.copy(_invView);
-}
-
-// replace the old basic tunnel mesh if present
-const oldTunnel = scene.getObjectByName("tunnel");
-if(oldTunnel) scene.remove(oldTunnel);
-
-// Update: call updateTunnelUniforms inside the render loop in Chunk 4/5
-// Example usage: setTunnelSeedDepth(12345, 2)
-</html>
-// ========== Chunk 3/5 ==========
-// Weapon generation
-function generateWeapon() {
-    const types = ["laser", "bullet", "flamethrower", "beam"];
-    const type = types[Math.floor(Math.random() * types.length)];
-    const power = Math.random() * 5 + 1;
-    const color = new THREE.Color(Math.random(), Math.random(), Math.random());
-    return { type, power, color };
-}
-
-// Enemy generation
-function generateEnemy() {
-    const geometry = new THREE.IcosahedronGeometry(Math.random() * 2 + 1, 1);
-    const color = new THREE.Color(Math.random(), Math.random(), Math.random());
-    const material = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color.clone().multiplyScalar(0.5),
-        flatShading: true
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth/window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
     });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(Math.random() * 20 - 10, 1, Math.random() * -20);
-    mesh.health = Math.random() * 50 + 50;
-    scene.add(mesh);
-    enemies.push(mesh);
-}
 
-// Shooting mechanic
-function shootWeapon() {
-    if (!currentWeapon) return;
+    document.body.addEventListener('click', () => {
+      controls.lock();
+    }, {once:true});
+  }
 
-    const raycaster = new THREE.Raycaster();
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-    const intersects = raycaster.intersectObjects(enemies);
+  // Create fractal tunnel (low poly neon style)
+  function createFractalTunnel(depth, baseRadius=5, length=10) {
+    const group = new THREE.Group();
 
-    if (intersects.length > 0) {
-        const enemy = intersects[0].object;
-        enemy.health -= currentWeapon.power * 10;
-        if (enemy.health <= 0) {
-            scene.remove(enemy);
-            enemies.splice(enemies.indexOf(enemy), 1);
-        }
-    }
-}
-
-// Fractal tunnel generation
-function generateFractalTunnel(seed) {
-    const random = new Math.seedrandom(seed);
-    const tunnelLength = 200;
-    const tunnelGeometry = new THREE.CylinderGeometry(10, 10, tunnelLength, 64, 1, true);
-    const tunnelMaterial = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(random(), random(), random()),
-        emissive: new THREE.Color(random(), random(), random()),
-        side: THREE.BackSide,
-        wireframe: false
+    const geometry = new THREE.CylinderGeometry(baseRadius, baseRadius, length, 12, 1, true);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00ffff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.3
     });
-    const tunnel = new THREE.Mesh(tunnelGeometry, tunnelMaterial);
-    tunnel.rotation.x = Math.PI / 2;
-    scene.add(tunnel);
-    fractalTunnels.push(tunnel);
-}
-// ========== Chunk 4/5 ==========
-// Room generation along fractal tunnel
-function generateRoom(seed) {
-    const random = new Math.seedrandom(seed);
-    const roomSize = 30;
+    for(let i=0; i<depth; i++) {
+      let mesh = new THREE.Mesh(geometry, material.clone());
+      mesh.position.z = -length * i;
+      mesh.material.color.setHSL(i/depth, 1, 0.5);
+      group.add(mesh);
+    }
+
+    return group;
+  }
+
+  // Generate rooms at fractal points
+  function createRoom(seed, index) {
+    const room = new THREE.Group();
+    let localRng = new RNG(seed + index*997);
+
+    const roomSize = 6;
     const geometry = new THREE.BoxGeometry(roomSize, roomSize, roomSize);
-    const color = new THREE.Color(random(), random(), random());
-    const material = new THREE.MeshStandardMaterial({
-        color: color,
-        emissive: color.clone().multiplyScalar(0.3),
-        side: THREE.BackSide
-    });
-    const room = new THREE.Mesh(geometry, material);
-    room.position.set(
-        (random() - 0.5) * 100,
-        (random() - 0.5) * 50,
-        (random() - 0.5) * 300
-    );
-    scene.add(room);
-    fractalRooms.push(room);
+    const edges = new THREE.EdgesGeometry(geometry);
+    const lineMat = new THREE.LineBasicMaterial({color: 0xff00ff});
+    const roomBox = new THREE.LineSegments(edges, lineMat);
+    room.add(roomBox);
+    room.position.z = -index * 10;
 
-    // Spawn enemies in the room
-    for (let i = 0; i < 5 + Math.floor(random() * 5); i++) {
-        const enemy = generateEnemy();
-        enemy.position.add(room.position.clone().add(new THREE.Vector3(
-            (random() - 0.5) * 20,
-            1,
-            (random() - 0.5) * 20
-        )));
+    // Add random enemies
+    let enemyCount = localRng.nextInt(3, 6);
+    for(let i=0; i<enemyCount; i++) {
+      let enemy = createEnemy(localRng);
+      enemy.position.set(
+        localRng.nextRange(-roomSize/2+1, roomSize/2-1),
+        localRng.nextRange(-roomSize/2+1, roomSize/2-1),
+        room.position.z + localRng.nextRange(-roomSize/2+1, roomSize/2-1)
+      );
+      room.add(enemy);
+      enemies.push(enemy);
     }
 
-    // Spawn loot in the room
-    for (let i = 0; i < 3; i++) {
-        const lootGeometry = new THREE.SphereGeometry(0.5, 16, 16);
-        const lootMaterial = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(random(), random(), random()),
-            emissive: new THREE.Color(random(), random(), random())
-        });
-        const loot = new THREE.Mesh(lootGeometry, lootMaterial);
-        loot.position.copy(room.position.clone().add(new THREE.Vector3(
-            (random() - 0.5) * 10,
-            1,
-            (random() - 0.5) * 10
-        )));
-        loot.isLoot = true;
-        scene.add(loot);
-        lootItems.push(loot);
-    }
-}
+    return room;
+  }
 
-// Detect portal collisions to move between rooms
-function checkPortalCollisions() {
-    for (let i = 0; i < fractalRooms.length; i++) {
-        const dist = camera.position.distanceTo(fractalRooms[i].position);
-        if (dist < 5) {
-            // Player reached a room
-            currentRoomIndex = i;
-            console.log("Entered room", i);
-        }
-    }
-}
+  // Create enemy mesh (low-poly neon)
+  function createEnemy(rng) {
+    const geometry = new THREE.TetrahedronGeometry(0.5);
+    const colorHue = rng.nextFloat();
+    const material = new THREE.MeshBasicMaterial({color: new THREE.Color().setHSL(colorHue, 1, 0.5), wireframe:true});
+    const enemy = new THREE.Mesh(geometry, material);
+    enemy.userData = { hp: 10 + Math.floor(rng.nextFloat()*20), alive:true, velocity: new THREE.Vector3() };
+    return enemy;
+  }
 
-// Loot collection
-function collectLoot() {
-    for (let i = lootItems.length - 1; i >= 0; i--) {
-        if (camera.position.distanceTo(lootItems[i].position) < 2) {
-            scene.remove(lootItems[i]);
-            lootItems.splice(i, 1);
-            console.log("Loot collected!");
-        }
-    }
-}
-// ========== Chunk 5/5 ==========
-// Input handling
-document.addEventListener('keydown', (event) => {
-    keys[event.code] = true;
-});
-document.addEventListener('keyup', (event) => {
-    keys[event.code] = false;
-});
+  // Generate a random weapon based on seed
+  function generateWeapon(seed) {
+    const weaponIndex = seed % weapons.length;
+    return weapons[weaponIndex];
+  }
 
-// Mouse look
-document.addEventListener('mousemove', (event) => {
-    if (document.pointerLockElement === document.body) {
-        camera.rotation.y -= event.movementX * mouseSensitivity;
-        camera.rotation.x -= event.movementY * mouseSensitivity;
-        camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
-    }
-});
-document.body.addEventListener('click', () => {
-    document.body.requestPointerLock();
-});
+  // Draw weapon on canvas (simple neon low-poly style)
+  function drawWeapon() {
+    weaponCtx.clearRect(0, 0, weaponCanvas.width, weaponCanvas.height);
+    weaponCtx.strokeStyle = currentWeapon.color;
+    weaponCtx.lineWidth = 3;
 
-// Shooting
-document.addEventListener('mousedown', () => {
-    const bullet = new THREE.Mesh(
-        new THREE.SphereGeometry(0.1, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xffff00 })
-    );
+    weaponCtx.beginPath();
+    // Simple gun shape with neon glow effect
+    weaponCtx.shadowColor = currentWeapon.color;
+    weaponCtx.shadowBlur = 12;
+    weaponCtx.moveTo(40, 130);
+    weaponCtx.lineTo(140, 130);
+    weaponCtx.lineTo(140, 90);
+    weaponCtx.lineTo(160, 90);
+    weaponCtx.lineTo(160, 70);
+    weaponCtx.lineTo(140, 70);
+    weaponCtx.lineTo(140, 40);
+    weaponCtx.lineTo(40, 40);
+    weaponCtx.closePath();
+    weaponCtx.stroke();
+
+    if(currentWeapon.flamethrower) {
+      weaponCtx.fillStyle = "rgba(255, 85, 0, 0.3)";
+      weaponCtx.beginPath();
+      weaponCtx.moveTo(160, 70);
+      weaponCtx.lineTo(190, 90);
+      weaponCtx.lineTo(160, 110);
+      weaponCtx.closePath();
+      weaponCtx.fill();
+    }
+  }
+
+  // Bullet creation
+  function shootBullet() {
+    if(player.bulletCooldown > 0) return;
+    player.bulletCooldown = 0.15;
+
+    const bulletGeo = new THREE.SphereGeometry(currentWeapon.bulletSize, 6, 6);
+    const bulletMat = new THREE.MeshBasicMaterial({color: currentWeapon.color});
+    const bullet = new THREE.Mesh(bulletGeo, bulletMat);
+
+    // Position bullet at camera position, moving forward
     bullet.position.copy(camera.position);
-    const dir = new THREE.Vector3();
-    camera.getWorldDirection(dir);
-    bullet.velocity = dir.multiplyScalar(1);
+    bullet.userData = {
+      velocity: new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(currentWeapon.bulletSpeed),
+      damage: currentWeapon.damage,
+      alive: true
+    };
     scene.add(bullet);
     bullets.push(bullet);
-});
-
-// Movement update
-function updatePlayer() {
-    const forward = new THREE.Vector3(Math.sin(camera.rotation.y), 0, Math.cos(camera.rotation.y));
-    const right = new THREE.Vector3(Math.cos(camera.rotation.y), 0, -Math.sin(camera.rotation.y));
-    if (keys['KeyW']) camera.position.add(forward.multiplyScalar(playerSpeed));
-    if (keys['KeyS']) camera.position.add(forward.multiplyScalar(-playerSpeed));
-    if (keys['KeyA']) camera.position.add(right.multiplyScalar(-playerSpeed));
-    if (keys['KeyD']) camera.position.add(right.multiplyScalar(playerSpeed));
 }
-
-// Bullet update
-function updateBullets() {
-    for (let i = bullets.length - 1; i >= 0; i--) {
-        bullets[i].position.add(bullets[i].velocity);
-        // Remove if too far
-        if (bullets[i].position.length() > 1000) {
-            scene.remove(bullets[i]);
-            bullets.splice(i, 1);
+  // Handle collisions bullet <-> enemy
+  function checkBulletEnemyCollisions() {
+    bullets.forEach(bullet => {
+      if(!bullet.userData.alive) return;
+      enemies.forEach(enemy => {
+        if(!enemy.userData.alive) return;
+        const dist = bullet.position.distanceTo(enemy.position);
+        if(dist < 0.7) {
+          enemy.userData.hp -= bullet.userData.damage;
+          bullet.userData.alive = false;
+          scene.remove(bullet);
+          if(enemy.userData.hp <= 0) {
+            enemy.userData.alive = false;
+            scene.remove(enemy);
+          }
         }
-        // Check collision with enemies
-        for (let j = enemies.length - 1; j >= 0; j--) {
-            if (bullets[i] && bullets[i].position.distanceTo(enemies[j].position) < 1) {
-                scene.remove(enemies[j]);
-                enemies.splice(j, 1);
-                scene.remove(bullets[i]);
-                bullets.splice(i, 1);
-                console.log("Enemy down!");
-                break;
-            }
-        }
-    }
-}
+      });
+    });
+    bullets = bullets.filter(b => b.userData.alive);
+  }
 
-// Main game loop
-function animate() {
+  // Animate loop
+  let lastFrameTime = performance.now();
+  let frames = 0, fps = 0, lastFpsUpdate = performance.now();
+
+  function animate() {
     requestAnimationFrame(animate);
-    updatePlayer();
-    updateBullets();
-    checkPortalCollisions();
-    collectLoot();
-    renderer.render(scene, camera);
-}
-animate();
+    const now = performance.now();
+    deltaTime = (now - lastFrameTime) / 1000;
+    lastFrameTime = now;
 
-// Generate initial fractal tunnel & rooms
-for (let s = 0; s < 10; s++) {
-    generateRoom("seed_" + s);
-}
+    // FPS calc
+    frames++;
+    if(now - lastFpsUpdate > 1000) {
+      fps = frames;
+      frames = 0;
+      lastFpsUpdate = now;
+      fpsCounter.textContent = "FPS: " + fps;
+    }
+
+    // Update player movement
+    if(controls.isLocked === true) {
+      const speed = player.speed * deltaTime;
+      if(keys['w']) controls.moveForward(speed);
+      if(keys['s']) controls.moveForward(-speed);
+      if(keys['a']) controls.moveRight(-speed);
+      if(keys['d']) controls.moveRight(speed);
+    }
+
+    // Update bullets
+    bullets.forEach(bullet => {
+      bullet.position.addScaledVector(bullet.userData.velocity, deltaTime);
+      // Remove bullet if too far
+      if(bullet.position.distanceTo(camera.position) > 100) {
+        bullet.userData.alive = false;
+        scene.remove(bullet);
+      }
+    });
+    bullets = bullets.filter(b => b.userData.alive);
+
+    // Check bullet-enemy collisions
+    checkBulletEnemyCollisions();
+
+    // Simple enemy AI - move toward player if alive
+    enemies.forEach(enemy => {
+      if(!enemy.userData.alive) return;
+      const dir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
+      enemy.position.addScaledVector(dir, 2 * deltaTime);
+    });
+
+    // Reduce bullet cooldown
+    if(player.bulletCooldown > 0) {
+      player.bulletCooldown -= deltaTime;
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  // Input
+  let keys = {};
+  window.addEventListener('keydown', e => {
+    keys[e.key.toLowerCase()] = true;
+    if(e.key === ' ') e.preventDefault();
+  });
+  window.addEventListener('keyup', e => {
+    keys[e.key.toLowerCase()] = false;
+  });
+
+  window.addEventListener('mousedown', e => {
+    if(controls.isLocked) shootBullet();
+  });
+
+  // Setup fractal and rooms
+  function setupGame(seedStr, depth) {
+    if(scene) {
+      // cleanup previous scene children except camera & controls
+      while(scene.children.length > 0) {
+        let child = scene.children[0];
+        if(child.type === "PerspectiveCamera" || child.type === "Group" && child === controls.getObject()) {
+          break;
+        }
+        scene.remove(child);
+      }
+    }
+
+    rng = new RNG(parseInt(seedStr) || 12345);
+    fractalGroup = new THREE.Group();
+    scene.add(fractalGroup);
+
+    // Create fractal tunnel
+    fractalGroup.add(createFractalTunnel(depth));
+
+    // Create rooms on tunnel
+    enemies = [];
+    for(let i=1; i<=depth; i++) {
+      const room = createRoom(parseInt(seedStr), i);
+      fractalGroup.add(room);
+    }
+
+    // Generate weapon based on seed
+    currentWeapon = generateWeapon(parseInt(seedStr));
+    drawWeapon();
+
+    // Reset player position
+    controls.getObject().position.set(0, 0, 2);
+    camera.position.copy(controls.getObject().position);
+  }
+
+  // Start button click
+  startBtn.onclick = () => {
+    const seed = seedInput.value.trim() || "12345";
+    const depth = Math.min(Math.max(parseInt(depthInput.value) || 3, 1), 10);
+    setupGame(seed, depth);
+  };
+
+  // Initialize everything
+  function init() {
+    initThree();
+    clock = new THREE.Clock();
+    animate();
+  }
+
+  init();
+})();
+</script>
+
+</body>
+</html>
