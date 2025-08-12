@@ -1,411 +1,707 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Neon Fractal FPS - Fixed FPS</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fractal Worlds — Mandelbrot Levels (Trippy Bosses)</title>
 <style>
-  body, html {
-    margin: 0; padding: 0; overflow: hidden; background: #000;
-    font-family: 'Orbitron', sans-serif;
-    color: #0ff;
-    user-select: none;
-  }
-  #overlay {
-    position: absolute;
-    top: 10px; left: 10px;
-    z-index: 10;
-    background: rgba(0,0,0,0.6);
-    padding: 10px;
-    border-radius: 8px;
-  }
-  #seedInput, #depthInput {
-    width: 140px;
-    background: #111;
-    border: 1px solid #0ff;
-    color: #0ff;
-    font-family: 'Orbitron', monospace;
-    font-size: 14px;
-    padding: 4px;
-    margin-bottom: 6px;
-  }
-  button {
-    background: #0ff;
-    border: none;
-    color: #000;
-    font-weight: bold;
-    font-family: 'Orbitron', monospace;
-    cursor: pointer;
-    padding: 6px 12px;
-    border-radius: 6px;
-    margin-left: 4px;
-  }
-  button:hover {
-    background: #0cc;
-  }
-  #weapon {
-    position: absolute;
-    bottom: 20px;
-    right: 40px;
-    width: 180px;
-    height: 100px;
-    pointer-events: none;
-  }
-  #weapon canvas {
-    width: 100%; height: 100%;
-    image-rendering: pixelated;
-  }
-  #fpsCounter {
-    position: fixed !important;
-    top: 10px !important;
-    right: 10px !important;
-    font-size: 24px !important;
-    color: #0ff !important;
-    z-index: 9999 !important;
-    user-select: none !important;
-    pointer-events: none !important;
-  }
+  html,body{height:100%;margin:0;background:#05050a;overflow:hidden;font-family:Inter,Arial,Helvetica,sans-serif}
+  #ui{position:fixed;left:12px;top:12px;z-index:90;background:rgba(8,8,12,0.92);padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);color:#ddd;width:320px}
+  #ui input,#ui button{background:#111;color:#ddd;border:1px solid #333;padding:8px;margin-top:8px;display:block;width:100%}
+  #mandel{display:block;margin-top:8px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);cursor:crosshair;image-rendering:pixelated}
+  #info{font-size:12px;color:#9fd;margin-top:8px}
+  #fps{position:fixed;right:12px;top:12px;color:#fff;z-index:90;font-weight:700}
+  .crosshair{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:92}
+  .crosshair::after{content:'';display:block;width:2px;height:18px;background:#fff;transform:translateX(-1px);opacity:0.95}
+  .crosshair::before{content:'';display:block;width:18px;height:2px;background:#fff;transform:translateY(-1px);opacity:0.95}
+  #weaponCanvas{position:fixed;right:18px;bottom:18px;z-index:90;background:rgba(0,0,0,0.45);border-radius:6px}
+  #message{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;color:#ddd;z-index:90}
+  .small{font-size:12px;color:#aaa;margin-top:6px}
 </style>
 </head>
 <body>
-
-<div id="overlay">
-  <div>Seed: <input type="text" id="seedInput" value="12345" /></div>
-  <div>Depth: <input type="number" id="depthInput" value="3" min="1" max="10" /></div>
-  <button id="startBtn">Enter Fractal</button>
+<div id="ui">
+  <div><strong>Mandelbrot → Level Generator</strong></div>
+  <div>Seed base: <input id="seed" value="1337"></div>
+  <div>Base platforms: <input id="platforms" type="number" min="1" max="20" value="6"></div>
+  <button id="startBtn">Start / Lock Pointer</button>
+  <button id="regenBtn">Generate Level From View</button>
+  <canvas id="mandel" width="320" height="320" title="Wheel to zoom, drag to pan, double-click to zoom"></canvas>
+  <div id="info">
+    <div>Center: <span id="coord">—</span></div>
+    <div>Zoom: <span id="zoomLevel">1</span> ×</div>
+    <div>Derived Seed: <span id="derivedSeed">—</span></div>
+  </div>
+  <div class="small">Click Mandelbrot to spawn a full trippy level at that complex coordinate. Zoom deeper to vary level complexity.</div>
 </div>
 
-<div id="fpsCounter">FPS: 0</div>
+<div id="fps">FPS: 0</div>
+<div class="crosshair"></div>
+<canvas id="weaponCanvas" width="320" height="120"></canvas>
+<div id="message">Click Start, then click to lock. WASD to move, mouse to look, left click to shoot.</div>
 
-<canvas id="weapon" width="320" height="180"></canvas>
+<!-- Use three r149 -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/PointerLockControls.js"></script>
+<!-- inline PointerLockControls -->
+<script>
+class PointerLockControls extends THREE.EventDispatcher {
+  constructor(camera, domElement){
+    super();
+    this.domElement = domElement || document.body;
+    this.isLocked = false;
+    const scope = this;
+    const euler = new THREE.Euler( 0, 0, 0, 'YXZ' );
+    const PI_2 = Math.PI/2;
+    function onMouseMove(e){
+      if(!scope.isLocked) return;
+      const movementX = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
+      const movementY = e.movementY || e.mozMovementY || e.webkitMovementY || 0;
+      euler.setFromQuaternion(camera.quaternion);
+      euler.y -= movementX * 0.0022;
+      euler.x -= movementY * 0.0022;
+      euler.x = Math.max(PI_2 - scope.maxPolarAngle, Math.min(PI_2 - scope.minPolarAngle, euler.x));
+      camera.quaternion.setFromEuler(euler);
+    }
+    function onPointerlockChange(){
+      scope.isLocked = (document.pointerLockElement === scope.domElement);
+      scope.dispatchEvent({type: scope.isLocked ? 'lock' : 'unlock'});
+    }
+    function onPointerlockError(){ console.error('PointerLockControls: error'); }
+    this.connect = function(){
+      document.addEventListener('mousemove', onMouseMove, false);
+      document.addEventListener('pointerlockchange', onPointerlockChange, false);
+      document.addEventListener('pointerlockerror', onPointerlockError, false);
+    };
+    this.disconnect = function(){
+      document.removeEventListener('mousemove', onMouseMove, false);
+      document.removeEventListener('pointerlockchange', onPointerlockChange, false);
+      document.removeEventListener('pointerlockerror', onPointerlockError, false);
+    };
+    this.getObject = function(){ return camera; };
+    this.moveForward = function(distance){
+      const v = new THREE.Vector3(); v.setFromMatrixColumn(camera.matrix, 0); v.crossVectors(camera.up, v); camera.position.addScaledVector(v, distance);
+    };
+    this.moveRight = function(distance){
+      const v = new THREE.Vector3(); v.setFromMatrixColumn(camera.matrix, 0); camera.position.addScaledVector(v, distance);
+    };
+    this.lock = function(){ this.domElement.requestPointerLock(); };
+    this.unlock = function(){ document.exitPointerLock(); };
+    this.connect();
+    this.minPolarAngle = 0; this.maxPolarAngle = Math.PI;
+  }
+}
+</script>
 
 <script>
+/* ------------------ Fractal Worlds: Mandelbrot -> Procedural Level (Trippy) ------------------ */
+
 (() => {
-  // RNG helper with seed
+  // RNG
   class RNG {
-    constructor(seed) {
-      this.seed = seed % 2147483647;
-      if(this.seed <= 0) this.seed += 2147483646;
+    constructor(seed=1){
+      if(typeof seed === 'string') this.seed = [...seed].reduce((a,c)=>a*131 + c.charCodeAt(0), 0);
+      else this.seed = seed|0;
+      this.seed = (this.seed % 2147483647) || 1;
     }
-    next() {
-      return this.seed = this.seed * 16807 % 2147483647;
-    }
-    nextFloat() {
-      return (this.next() - 1) / 2147483646;
-    }
-    nextRange(min, max) {
-      return min + this.nextFloat() * (max - min);
-    }
-    nextInt(min, max) {
-      return Math.floor(this.nextRange(min, max+1));
-    }
+    next(){ return this.seed = (this.seed * 16807) % 2147483647; }
+    f(){ return (this.next()-1)/2147483646; }
+    int(min,max){ return Math.floor(min + this.f()*(max-min+1)); }
+    float(min,max){ return min + this.f()*(max-min); }
   }
 
-   // Globals
-  let scene, camera, renderer, controls;
-  let fractalGroup;
-  let enemies = [];
-  let bullets = [];
-  let clock, deltaTime;
-  let rng;
-  let player = {
-    velocity: new THREE.Vector3(),
-    speed: 6,
-    bulletCooldown: 0,
-    hp: 100,
-  };
-  let weapons = [
-    { name:"Laser Blaster", color:"#0ff", bulletSpeed:70, bulletSize:0.1, damage:10, beam:false, flamethrower:false },
-    { name:"Flame Thrower", color:"#f50", bulletSpeed:40, bulletSize:0.15, damage:2, beam:false, flamethrower:true },
-    { name:"Neon Cannon", color:"#f0f", bulletSpeed:50, bulletSize:0.3, damage:20, beam:false, flamethrower:false },
-    { name:"Focused Beam", color:"#ff0", bulletSpeed:100, bulletSize:0.05, damage:5, beam:true, flamethrower:false }
-  ];
-  let currentWeapon;
-  let weaponCanvas, weaponCtx;
+  // DOM
+  const mandelCanvas = document.getElementById('mandel');
+  const mandelCtx = mandelCanvas.getContext('2d');
+  const seedInput = document.getElementById('seed');
+  const platformsInput = document.getElementById('platforms');
+  const startBtn = document.getElementById('startBtn');
+  const regenBtn = document.getElementById('regenBtn');
+  const coordEl = document.getElementById('coord');
+  const zoomEl = document.getElementById('zoomLevel');
+  const derivedSeedEl = document.getElementById('derivedSeed');
+  const fpsEl = document.getElementById('fps');
+  const weaponCanvas = document.getElementById('weaponCanvas'); const wctx = weaponCanvas.getContext('2d');
 
-  // HTML elements
-  const seedInput = document.getElementById("seedInput");
-  const depthInput = document.getElementById("depthInput");
-  const startBtn = document.getElementById("startBtn");
-  const fpsCounter = document.getElementById("fpsCounter");
-  weaponCanvas = document.getElementById("weapon");
-  weaponCtx = weaponCanvas.getContext("2d");
+  // Mandelbrot view state
+  let center = {re: -0.5, im: 0.0};
+  let scale = 2.8;
+  let zoomFactor = 1.0;
+  let maxIterBase = 120;
 
-  // Init three.js
-  function initThree() {
+  // Three.js variables
+  let scene, camera, renderer, controls, clock;
+  let bullets = [], enemies = [], loot = [], worldGroup = null;
+  let player = { hp:100, speed:6, cooldown:0 };
+  let keys = {};
+  let frameCount = 0, fpsTimer = 0;
+
+  // derive an int seed from view coords + zoom
+  function deriveSeed(cx, cy, sc){
+    const qx = Math.round(cx * 1e6);
+    const qy = Math.round(cy * 1e6);
+    const qz = Math.round((1/sc) * 1000);
+    return Math.abs((qx * 73856093) ^ (qy * 19349663) ^ (qz * 83492791)) % 1000000000;
+  }
+
+  // Mandelbrot rendering (moderate resolution)
+  function renderMandelbrot(viewCenter, viewScale, maxIter){
+    const w = mandelCanvas.width, h = mandelCanvas.height;
+    const img = mandelCtx.createImageData(w,h);
+    const cx = viewCenter.re, cy = viewCenter.im;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const re = cx + (x/w - 0.5)*viewScale;
+        const im = cy + (y/h - 0.5)*(viewScale * h/w);
+        let zr=0, zi=0, iter=0;
+        while(zr*zr + zi*zi <= 4 && iter < maxIter){
+          const tmp = zr*zr - zi*zi + re;
+          zi = 2*zr*zi + im;
+          zr = tmp; iter++;
+        }
+        const idx = (y*w + x)*4;
+        if(iter === maxIter){
+          img.data[idx]=6; img.data[idx+1]=8; img.data[idx+2]=12; img.data[idx+3]=255;
+        } else {
+          const t = iter / maxIter;
+          const r = Math.floor(25 + 230 * Math.sqrt(t));
+          const g = Math.floor(10 + 120 * t);
+          const b = Math.floor(80 + 120 * (1 - t));
+          img.data[idx]=r; img.data[idx+1]=g; img.data[idx+2]=b; img.data[idx+3]=255;
+        }
+      }
+    }
+    mandelCtx.putImageData(img, 0, 0);
+  }
+
+  function updateMandelInfo(){
+    coordEl.textContent = `${center.re.toFixed(6)} ${center.im>=0?'+':'-'}${Math.abs(center.im).toFixed(6)}i`;
+    zoomFactor = Math.max(1, 2.8/scale);
+    zoomEl.textContent = zoomFactor.toFixed(2);
+    derivedSeedEl.textContent = deriveSeed(center.re, center.im, scale);
+  }
+
+  // interactive mandelbrot handlers (pan, zoom, dblclick)
+  let isPanning=false, panStart=null;
+  mandelCanvas.addEventListener('mousedown', e=>{
+    isPanning = true;
+    panStart = {x:e.clientX, y:e.clientY, center: {...center}};
+  });
+  window.addEventListener('mouseup', ()=>{ isPanning=false; panStart=null; });
+  window.addEventListener('mousemove', e=>{
+    if(isPanning && panStart){
+      const dx = e.clientX - panStart.x, dy = e.clientY - panStart.y;
+      const w = mandelCanvas.width, h = mandelCanvas.height;
+      center.re = panStart.center.re - dx/w * scale;
+      center.im = panStart.center.im + dy/h * scale * (h/w);
+      scheduleMandelRender(); updateMandelInfo();
+    }
+  });
+
+  mandelCanvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const rect = mandelCanvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const w = mandelCanvas.width, h = mandelCanvas.height;
+    const mouseRe = center.re + (mx/w - 0.5) * scale;
+    const mouseIm = center.im + (my/h - 0.5) * scale * (h/w);
+    const delta = e.deltaY * (e.shiftKey ? 0.0006 : 0.002);
+    const factor = Math.exp(delta);
+    scale *= factor;
+    center.re = mouseRe + (center.re - mouseRe) * factor;
+    center.im = mouseIm + (center.im - mouseIm) * factor;
+    scheduleMandelRender(); updateMandelInfo();
+  }, {passive:false});
+
+  mandelCanvas.addEventListener('dblclick', e=>{
+    const rect = mandelCanvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const w = mandelCanvas.width, h = mandelCanvas.height;
+    const mouseRe = center.re + (mx/w - 0.5) * scale;
+    const mouseIm = center.im + (my/h - 0.5) * scale * (h/w);
+    const factor = 0.5;
+    scale *= factor;
+    center.re = mouseRe + (center.re - mouseRe) * factor;
+    center.im = mouseIm + (center.im - mouseIm) * factor;
+    scheduleMandelRender(); updateMandelInfo();
+  });
+
+  // click to spawn level at point
+  mandelCanvas.addEventListener('click', (ev)=>{
+    // compute complex coordinate
+    const rect = mandelCanvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+    const w = mandelCanvas.width, h = mandelCanvas.height;
+    const re = center.re + (mx/w - 0.5) * scale;
+    const im = center.im + (my/h - 0.5) * scale * (h/w);
+    const baseSeed = Number(seedInput.value) || 1337;
+    const derived = deriveSeed(re, im, scale);
+    // final world seed mixes baseSeed + derived + zoom
+    const finalSeed = (baseSeed * 9973 + derived + Math.floor(zoomFactor*17)) % 1000000000;
+    const basePlatforms = Math.max(1, Math.min(20, Number(platformsInput.value) || 6));
+    const zoomMult = Math.floor(Math.max(0, Math.log2(Math.max(1, zoomFactor))));
+    const platforms = Math.min(36, basePlatforms + zoomMult*3);
+    generateLevel(finalSeed, platforms);
+  });
+
+  // ---------- Three initialization ----------
+  function initThree(){
     scene = new THREE.Scene();
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    scene.background = new THREE.Color(0x07060b);
+    camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 3000);
     renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
-    controls = new THREE.PointerLockControls(camera, document.body);
+
+    controls = new PointerLockControls(camera, document.body);
     scene.add(controls.getObject());
 
-    window.addEventListener("resize", () => {
-      camera.aspect = window.innerWidth/window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    window.addEventListener('resize', ()=>{ camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
-    document.body.addEventListener('click', () => {
-      controls.lock();
-    }, {once:true});
+    // lights
+    const hemi = new THREE.HemisphereLight(0xbfeaff, 0x202020, 0.4); scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 1.0); dir.position.set(6, 12, 6); dir.castShadow = true;
+    dir.shadow.mapSize.set(2048, 2048);
+    dir.shadow.camera.left = -200; dir.shadow.camera.right = 200; dir.shadow.camera.top = 200; dir.shadow.camera.bottom = -200; scene.add(dir);
+
+    // base ground (behind levels)
+    const floorMat = new THREE.MeshStandardMaterial({color:0x222238, roughness:0.95}); 
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(3000,3000), floorMat); floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+
+    // visible weapon
+    createVisibleWeapon();
+
+    clock = new THREE.Clock();
   }
 
-  // Create fractal tunnel (low poly neon style)
-  function createFractalTunnel(depth, baseRadius=5, length=10) {
-    const group = new THREE.Group();
+  // visible weapon
+  let weaponGroup;
+  function createVisibleWeapon(){
+    weaponGroup = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.36,0.18,1.06), new THREE.MeshStandardMaterial({color:0x202020})); body.position.set(0.48,-0.33,-0.58); weaponGroup.add(body);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.86,8), new THREE.MeshStandardMaterial({color:0x00ffcc, metalness:0.8, roughness:0.2})); barrel.rotation.z=Math.PI/2; barrel.position.set(0.95,-0.33,-0.58); weaponGroup.add(barrel);
+    camera.add(weaponGroup); weaponGroup.position.set(0,-0.24,-0.45);
+  }
 
-    const geometry = new THREE.CylinderGeometry(baseRadius, baseRadius, length, 12, 1, true);
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x00ffff,
-      wireframe: true,
-      transparent: true,
-      opacity: 0.3
-    });
-    for(let i=0; i<depth; i++) {
-      let mesh = new THREE.Mesh(geometry, material.clone());
-      mesh.position.z = -length * i;
-      mesh.material.color.setHSL(i/depth, 1, 0.5);
-      group.add(mesh);
+  // ---------- Level generation ----------
+  // generate a psychedelic level: platforms (floating), connecting rings, pillars, fog/haze, trippy boss
+  function generateLevel(seed, platformsCount){
+    // clear previous world
+    if(worldGroup){
+      try{ scene.remove(worldGroup); worldGroup.traverse(c=>{ if(c.geometry) c.geometry.dispose(); if(c.material) { if(c.material.map) c.material.map.dispose(); c.material.dispose(); } }); }catch(e){}
     }
+    worldGroup = new THREE.Group();
+    scene.add(worldGroup);
+    enemies.forEach(e=> scene.remove(e)); enemies = [];
+    bullets.forEach(b=> scene.remove(b)); bullets = [];
+    loot.forEach(l=> scene.remove(l)); loot=[];
 
-    return group;
-  }
+    const rng = new RNG(seed);
+    // ambient fog color tied to seed (trippy)
+    const baseHue = rng.f();
+    scene.fog = new THREE.FogExp2(new THREE.Color().setHSL(baseHue, 0.5, 0.04).getHex(), 0.01 + rng.f()*0.03);
 
-  // Generate rooms at fractal points
-  function createRoom(seed, index) {
-    const room = new THREE.Group();
-    let localRng = new RNG(seed + index*997);
-
-    const roomSize = 6;
-    const geometry = new THREE.BoxGeometry(roomSize, roomSize, roomSize);
-    const edges = new THREE.EdgesGeometry(geometry);
-    const lineMat = new THREE.LineBasicMaterial({color: 0xff00ff});
-    const roomBox = new THREE.LineSegments(edges, lineMat);
-    room.add(roomBox);
-    room.position.z = -index * 10;
-
-    // Add random enemies
-    let enemyCount = localRng.nextInt(3, 6);
-    for(let i=0; i<enemyCount; i++) {
-      let enemy = createEnemy(localRng);
-      enemy.position.set(
-        localRng.nextRange(-roomSize/2+1, roomSize/2-1),
-        localRng.nextRange(-roomSize/2+1, roomSize/2-1),
-        room.position.z + localRng.nextRange(-roomSize/2+1, roomSize/2-1)
-      );
-      room.add(enemy);
-      enemies.push(enemy);
+    // generate central "core" — rotating fractal-ish rings
+    const core = new THREE.Group();
+    const ringCount = Math.max(3, Math.min(12, Math.floor(platformsCount/2)));
+    for(let i=0;i<ringCount;i++){
+      const radius = 6 + i*1.5 + rng.float(-0.6,0.6);
+      const tube = 0.6 + rng.f()*0.6;
+      const segs = 12;
+      const geo = new THREE.TorusGeometry(radius, tube, 4, segs);
+      const mat = new THREE.MeshStandardMaterial({emissive: new THREE.Color().setHSL((baseHue + i*0.08)%1, 0.9, 0.25), color: new THREE.Color().setHSL((baseHue + i*0.08)%1,0.4,0.2), roughness: 0.35, metalness:0.6});
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = rng.f()*Math.PI;
+      mesh.rotation.y = rng.f()*Math.PI;
+      mesh.position.set(rng.float(-2,2), rng.float(-1,1), rng.float(-2,2));
+      mesh.castShadow = false; mesh.receiveShadow = true;
+      core.add(mesh);
     }
+    worldGroup.add(core);
 
-    return room;
-  }
+    // floating platforms
+    const platforms = [];
+    for(let i=0;i<platformsCount;i++){
+      const angle = rng.f() * Math.PI * 2;
+      const dist = 6 + i * rng.float(2.5, 5) + rng.float(-1.2,1.2);
+      const x = Math.cos(angle) * dist;
+      const z = Math.sin(angle) * dist;
+      const y = rng.float(-1.5, 4) + (i%2===0 ? 1 : -0.5);
+      const size = rng.float(2.2, 6.0) * (1 + Math.sin(i)*0.15);
+      const geom = new THREE.CylinderGeometry(size, size*0.6, 0.6, 14);
+      const mat = new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL((baseHue + rng.f()*0.3) % 1, 0.4, 0.25), roughness:0.6, metalness:0.2, emissive: new THREE.Color().setHSL((baseHue + rng.f()*0.4)%1, 0.9, 0.06)});
+      const platform = new THREE.Mesh(geom, mat);
+      platform.position.set(x,y,z);
+      platform.rotation.y = rng.f()*Math.PI;
+      platform.castShadow = true; platform.receiveShadow = true;
+      worldGroup.add(platform);
+      platforms.push(platform);
 
-  // Create enemy mesh (low-poly neon)
-  function createEnemy(rng) {
-    const geometry = new THREE.TetrahedronGeometry(0.5);
-    const colorHue = rng.nextFloat();
-    const material = new THREE.MeshBasicMaterial({color: new THREE.Color().setHSL(colorHue, 1, 0.5), wireframe:true});
-    const enemy = new THREE.Mesh(geometry, material);
-    enemy.userData = { hp: 10 + Math.floor(rng.nextFloat()*20), alive:true, velocity: new THREE.Vector3() };
-    return enemy;
-  }
+      // small pillars sticking up
+      const pillars = rng.int(0,3);
+      for(let p=0;p<pillars;p++){
+        const h = rng.float(0.6,3.2);
+        const pg = new THREE.CylinderGeometry(0.12, 0.12, h, 6);
+        const pm = new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL((baseHue + rng.f()*0.5)%1, 0.6, 0.18), roughness:0.7});
+        const pillar = new THREE.Mesh(pg, pm);
+        pillar.position.set(x + rng.float(-size/3, size/3), y + h/2 + 0.1, z + rng.float(-size/3, size/3));
+        pillar.castShadow = true; pillar.receiveShadow = true;
+        worldGroup.add(pillar);
+      }
 
-  // Generate a random weapon based on seed
-  function generateWeapon(seed) {
-    const weaponIndex = seed % weapons.length;
-    return weapons[weaponIndex];
-  }
-
-  // Draw weapon on canvas (simple neon low-poly style)
-  function drawWeapon() {
-    weaponCtx.clearRect(0, 0, weaponCanvas.width, weaponCanvas.height);
-    weaponCtx.strokeStyle = currentWeapon.color;
-    weaponCtx.lineWidth = 3;
-
-    weaponCtx.beginPath();
-    // Simple gun shape with neon glow effect
-    weaponCtx.shadowColor = currentWeapon.color;
-    weaponCtx.shadowBlur = 12;
-    weaponCtx.moveTo(40, 130);
-    weaponCtx.lineTo(140, 130);
-    weaponCtx.lineTo(140, 90);
-    weaponCtx.lineTo(160, 90);
-    weaponCtx.lineTo(160, 70);
-    weaponCtx.lineTo(140, 70);
-    weaponCtx.lineTo(140, 40);
-    weaponCtx.lineTo(40, 40);
-    weaponCtx.closePath();
-    weaponCtx.stroke();
-
-    if(currentWeapon.flamethrower) {
-      weaponCtx.fillStyle = "rgba(255, 85, 0, 0.3)";
-      weaponCtx.beginPath();
-      weaponCtx.moveTo(160, 70);
-      weaponCtx.lineTo(190, 90);
-      weaponCtx.lineTo(160, 110);
-      weaponCtx.closePath();
-      weaponCtx.fill();
-    }
-  }
-
-  // Bullet creation
-  function shootBullet() {
-    if(player.bulletCooldown > 0) return;
-    player.bulletCooldown = 0.15;
-
-    const bulletGeo = new THREE.SphereGeometry(currentWeapon.bulletSize, 6, 6);
-    const bulletMat = new THREE.MeshBasicMaterial({color: currentWeapon.color});
-    const bullet = new THREE.Mesh(bulletGeo, bulletMat);
-
-    // Position bullet at camera position, moving forward
-    bullet.position.copy(camera.position);
-    bullet.userData = {
-      velocity: new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).multiplyScalar(currentWeapon.bulletSpeed),
-      damage: currentWeapon.damage,
-      alive: true
-    };
-    scene.add(bullet);
-    bullets.push(bullet);
-  }
-    // Handle collisions bullet <-> enemy
-  function checkBulletEnemyCollisions() {
-    bullets.forEach(bullet => {
-      if(!bullet.userData.alive) return;
-      enemies.forEach(enemy => {
-        if(!enemy.userData.alive) return;
-        const dist = bullet.position.distanceTo(enemy.position);
-        if(dist < 0.7) {
-          enemy.userData.hp -= bullet.userData.damage;
-          bullet.userData.alive = false;
-          scene.remove(bullet);
-          if(enemy.userData.hp <= 0) {
-            enemy.userData.alive = false;
-            scene.remove(enemy);
-          }
+      // spawn enemies on platform sometimes
+      if(rng.f() < 0.8){
+        const ecount = rng.int(0,2);
+        for(let ei=0; ei<ecount; ei++){
+          const enemy = createTrippyEnemy(rng, baseHue);
+          enemy.position.set(x + rng.float(-size/3, size/3), y + 0.6, z + rng.float(-size/3, size/3));
+          scene.add(enemy); enemies.push(enemy);
         }
-      });
-    });
-    bullets = bullets.filter(b => b.userData.alive);
-  }
+      }
 
-  // Animate loop with fixed FPS calculation and debug log
-  let lastFrameTime = performance.now();
-  let frameCount = 0;
-  let fps = 0;
-  let fpsTimer = 0;
-
-  function animate() {
-    requestAnimationFrame(animate);
-    const now = performance.now();
-    deltaTime = (now - lastFrameTime) / 1000;
-    lastFrameTime = now;
-
-    // FPS calculation
-    frameCount++;
-    fpsTimer += deltaTime;
-
-    if(fpsTimer >= 1) {
-      fps = frameCount;
-      fpsCounter.textContent = "FPS: " + fps;
-      console.log("FPS:", fps);  // DEBUG: Check console for updates
-      frameCount = 0;
-      fpsTimer = 0;
+      // loot
+      if(rng.f() < 0.5){
+        const l = createLoot(rng);
+        l.position.set(x + rng.float(-size/4, size/4), y + 0.4, z + rng.float(-size/4, size/4));
+        scene.add(l); loot.push(l);
+      }
     }
 
-    // Player movement
-    if(controls.isLocked === true) {
-      const speed = player.speed * deltaTime;
+    // decorative particles / floating points
+    const particlesGeom = new THREE.BufferGeometry();
+    const pCount = Math.min(600, 120 + platformsCount * 40);
+    const posArr = new Float32Array(pCount*3);
+    for(let i=0;i<pCount;i++){
+      const a = rng.f() * Math.PI * 2;
+      const rdist = rng.float(2, platformsCount*3 + 6);
+      const px = Math.cos(a)*rdist + rng.float(-2,2);
+      const pz = Math.sin(a)*rdist + rng.float(-2,2);
+      const py = rng.float(-4,6);
+      posArr[i*3+0]=px; posArr[i*3+1]=py; posArr[i*3+2]=pz;
+    }
+    particlesGeom.setAttribute('position', new THREE.BufferAttribute(posArr,3));
+    const points = new THREE.Points(particlesGeom, new THREE.PointsMaterial({size: 0.08, color: new THREE.Color().setHSL((baseHue+0.2)%1, 0.7, 0.6), transparent:true, opacity:0.8}));
+    worldGroup.add(points);
+
+    // trippy boss at center far above (or chosen spot)
+    const boss = createTrippyBoss(rng, baseHue, Math.max(1, Math.floor(platformsCount/6)));
+    boss.position.set(0, 6 + rng.float(2,6) + platformsCount*0.2, 0);
+    scene.add(boss); enemies.push(boss);
+
+    // teleport player to nearest platform or center
+    let spawnPos = platforms.length ? platforms[0].position.clone() : new THREE.Vector3(0,2,6);
+    spawnPos.y += 1.2;
+    controls.getObject().position.copy(spawnPos);
+    camera.position.copy(spawnPos);
+
+    // link core animation to worldGroup for update
+    worldGroup.userData = {seed, rng, baseHue, core, platforms, particles:points, boss};
+  }
+
+  // create trippy enemy
+  function createTrippyEnemy(rng, baseHue){
+    const geom = new THREE.TetrahedronGeometry(0.45 + rng.f()*0.6);
+    const hue = (baseHue + rng.f()*0.5) % 1;
+    const mat = new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL(hue, 0.9, 0.5), emissive: new THREE.Color().setHSL(hue, 0.9, 0.15), roughness:0.3, metalness:0.6});
+    const m = new THREE.Mesh(geom, mat);
+    m.castShadow = true; m.receiveShadow = false;
+    m.userData = {hp: 6 + Math.round(rng.f()*12), speed: 0.6 + rng.f()*1.6, phase: rng.f()*Math.PI*2};
+    return m;
+  }
+
+  function createLoot(rng){
+    const g = new THREE.BoxGeometry(0.5,0.5,0.5);
+    const mat = new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL(rng.f(), 0.8, 0.6), emissive: new THREE.Color().setHSL(rng.f(), 0.8, 0.12)});
+    const m = new THREE.Mesh(g, mat);
+    m.castShadow = true; m.userData = {value: rng.int(5,30)};
+    return m;
+  }
+
+  function createTrippyBoss(rng, baseHue, phaseCount){
+    // boss: nested octa + rings with animated hue and attacks
+    const bossGroup = new THREE.Group();
+    const size = 2.2 + phaseCount*0.8;
+    const oct = new THREE.Mesh(new THREE.OctahedronGeometry(size, 0), new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL((baseHue+0.5)%1,0.85,0.45), emissive: new THREE.Color().setHSL((baseHue+0.5)%1, 0.9, 0.12), metalness:0.3, roughness:0.2}));
+    oct.castShadow = true; bossGroup.add(oct);
+    // outer ring
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(size*1.6, 0.25, 6, 24), new THREE.MeshStandardMaterial({color: new THREE.Color().setHSL((baseHue+0.9)%1,0.9,0.28), emissive: new THREE.Color().setHSL((baseHue+0.9)%1,0.9,0.08), metalness:0.6, roughness:0.1}));
+    bossGroup.add(ring);
+    // behaviour meta
+    bossGroup.userData = {hp: 120 + phaseCount*90, speed: 0.2 + phaseCount*0.08, seed: rng.seed, attackTimer: 0, phase: 0, baseHue};
+    // simple periodic color animation and attack
+    bossGroup.tick = (dt) => {
+      oct.rotation.x += dt*0.2; oct.rotation.y += dt*0.18;
+      ring.rotation.z += dt*0.25;
+      const hueShift = (Date.now() * 0.00008 + rng.f()) % 1;
+      oct.material.color.setHSL((bossGroup.userData.baseHue + hueShift)%1, 0.7, 0.45);
+      ring.material.color.setHSL((bossGroup.userData.baseHue + hueShift + 0.25)%1, 0.9, 0.28);
+      // attacks: every few seconds, spawn inward pulses
+      bossGroup.userData.attackTimer -= dt;
+      if(bossGroup.userData.attackTimer <= 0){
+        bossGroup.userData.attackTimer = 2.0 + rng.f()*2.5;
+        spawnBossPulse(bossGroup, rng);
+      }
+    };
+    return bossGroup;
+  }
+
+  // boss pulse: spawn colorful projectiles outward from boss towards random directions, and occasional aimed shot to player
+  function spawnBossPulse(boss, rng){
+    const origin = new THREE.Vector3().setFromMatrixPosition(boss.matrixWorld);
+    const shotCount = 8 + rng.int(0,8);
+    for(let i=0;i<shotCount;i++){
+      const theta = rng.f() * Math.PI * 2;
+      const phi = rng.f() * Math.PI * 0.6 - 0.2;
+      const dir = new THREE.Vector3(Math.cos(theta)*Math.cos(phi), Math.sin(phi), Math.sin(theta)*Math.cos(phi)).normalize();
+      spawnEnemyProjectile(origin, dir, 14 + rng.f()*8, 6 + rng.int(-1,4), 0xff33aa);
+    }
+    // aimed shot
+    const playerPos = controls.getObject().position.clone();
+    const aim = new THREE.Vector3().subVectors(playerPos, origin).normalize();
+    spawnEnemyProjectile(origin, aim, 25, 10, 0xffdd55);
+  }
+
+  function spawnEnemyProjectile(position, dir, speed, damage, colorHex){
+    const g = new THREE.SphereGeometry(0.12, 6, 6);
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({color: colorHex, emissive: colorHex, metalness: 0.6}));
+    m.position.copy(position);
+    m.userData = {vel: dir.clone().multiplyScalar(speed), life: 6, damage};
+    scene.add(m);
+    enemies.push(m); // reuse enemies array to allow collision handling (projectiles will be cleaned separately)
+    // tag as projectile type
+    m.userData.projectile = true;
+  }
+
+  // ---------- Shooting & collisions ----------
+  function shoot(){
+    if(player.cooldown > 0) return;
+    player.cooldown = 0.12;
+    // projectile
+    const geo = new THREE.SphereGeometry(0.08, 8, 8);
+    const mat = new THREE.MeshStandardMaterial({color:0xaaff77, emissive:0x66ff88, metalness:0.6});
+    const bullet = new THREE.Mesh(geo, mat); bullet.castShadow = true;
+    bullet.position.copy(camera.position);
+    const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
+    bullet.userData = {vel: dir.multiplyScalar(80), life: 3.5, damage: 10, owner: 'player'};
+    scene.add(bullet); bullets.push(bullet);
+  }
+
+  function updateBullets(dt){
+    for(let i=bullets.length-1;i>=0;i--){
+      const b = bullets[i];
+      b.position.addScaledVector(b.userData.vel, dt);
+      b.userData.life -= dt;
+      // collision with enemies (excluding projectiles)
+      for(let j=enemies.length-1;j>=0;j--){
+        const e = enemies[j];
+        if(e.userData && e.userData.projectile) continue; // skip enemy projectiles
+        if(!e.userData || !e.userData.hp && !e.userData.boss) continue;
+        const dist = e.position.distanceTo(b.position);
+        if(dist < 0.9){
+          // apply damage
+          if(e.userData.boss){
+            e.userData.hp -= b.userData.damage;
+            // visual feedback: scale
+            e.scale.setScalar(1 + Math.random()*0.05);
+            if(e.userData.hp <= 0){
+              // destroy boss
+              if(e.parent) e.parent.remove(e);
+              scene.remove(e);
+            }
+          } else {
+            e.userData.hp -= b.userData.damage;
+            if(e.userData.hp <= 0){
+              scene.remove(e); enemies.splice(j,1);
+            }
+          }
+          b.userData.life = 0;
+          break;
+        }
+      }
+      if(b.userData.life <= 0){ scene.remove(b); bullets.splice(i,1); }
+    }
+  }
+
+  // enemy movement and handling (exploding projectiles vs normal enemies)
+  function updateEnemies(dt){
+    for(let i=enemies.length-1;i>=0;i--){
+      const e = enemies[i];
+      // projectiles (spawned by boss) will fly and damage player
+      if(e.userData && e.userData.projectile){
+        e.position.addScaledVector(e.userData.vel, dt);
+        e.userData.life -= dt;
+        if(e.userData.life <= 0){ scene.remove(e); enemies.splice(i,1); continue; }
+        // collision with player
+        if(e.position.distanceTo(camera.position) < 1.2){
+          player.hp -= e.userData.damage;
+          scene.remove(e); enemies.splice(i,1);
+          continue;
+        }
+        continue;
+      }
+      // normal trippy enemy AI: bob & approach player
+      if(e.userData && !e.userData.boss){
+        const dir = new THREE.Vector3().subVectors(camera.position, e.position).setY(0);
+        const dist = dir.length();
+        // sine bob
+        const t = Date.now() * 0.001 + (e.userData.phase || 0);
+        e.position.y += Math.sin(t) * dt * 0.6;
+        if(dist > 1.6){
+          dir.normalize(); e.position.addScaledVector(dir, dt * e.userData.speed);
+        } else {
+          player.hp -= dt * 6;
+        }
+      } else if(e.userData && e.userData.boss){
+        // boss group tick if present (boss group has tick)
+        if(e.tick) e.tick(dt);
+      }
+    }
+  }
+
+  // pickups
+  function updateLoot(){
+    for(let i=loot.length-1;i>=0;i--){
+      const l = loot[i];
+      if(camera.position.distanceTo(l.position) < 1.2){
+        player.hp = Math.min(200, player.hp + (l.userData.value || 10));
+        scene.remove(l); loot.splice(i,1);
+      }
+    }
+  }
+
+  // ---------- Input wiring ----------
+  startBtn.addEventListener('click', ()=>{ controls.lock(); });
+  regenBtn.addEventListener('click', ()=>{ 
+    const p = pickPoint(Number(seedInput.value)||1337);
+    const derived = deriveSeed(p.re, p.im, scale);
+    const finalSeed = (Number(seedInput.value)||1337) * 9973 + derived;
+    const platforms = Math.max(1, Math.min(36, Number(platformsInput.value) || 6));
+    generateLevel(finalSeed, platforms);
+  });
+
+  window.addEventListener('keydown', (e)=>{ keys[e.key.toLowerCase()] = true; if(e.key===' ') e.preventDefault(); });
+  window.addEventListener('keyup', (e)=>{ keys[e.key.toLowerCase()] = false; });
+  window.addEventListener('mousedown', (e)=>{ if(controls.isLocked) shoot(); });
+
+  function shoot(){ shootWeapon(); }
+  function shootWeapon(){ shoot(); }
+
+  // ---------- Mandelbrot helpers ----------
+  let mandelScheduled = false;
+  function scheduleMandelRender(){
+    if(mandelScheduled) return;
+    mandelScheduled = true;
+    requestAnimationFrame(()=>{
+      mandelScheduled = false;
+      const zoom = Math.max(1, 2.8/scale);
+      const maxIter = Math.floor(maxIterBase + Math.log2(zoom) * 80);
+      renderMandelbrot(center, scale, Math.max(80, Math.min(2000, maxIter)));
+      updateMandelInfo();
+    });
+  }
+
+  function pickPoint(seed){
+    const w = mandelCanvas.width, h = mandelCanvas.height;
+    const r = new RNG(seed);
+    let best = null, bestIt = -1;
+    for(let t=0;t<300;t++){
+      const x = r.int(0,w-1), y = r.int(0,h-1);
+      const re = center.re + (x/w - 0.5)*scale;
+      const im = center.im + (y/h - 0.5)*scale * (h/w);
+      let zr=0, zi=0, iter=0, maxIter=200;
+      while(zr*zr + zi*zi <= 4 && iter < maxIter){
+        const tmp = zr*zr - zi*zi + re; zi = 2*zr*zi + im; zr = tmp; iter++;
+      }
+      if(iter > bestIt){ bestIt = iter; best = {re, im}; }
+    }
+    return best || {re:center.re, im:center.im};
+  }
+
+  // ---------- level generation helpers reused (exposed earlier) ----------
+  // For convenience in the animation loop, store boss groups separately
+  // but here createTrippyBoss returned a group with tick property; we add it to scene directly.
+
+  // ---------- animation / main loop ----------
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = Math.min(0.06, clock.getDelta());
+
+    // movement
+    if(controls.isLocked){
+      const speed = player.speed * dt;
       if(keys['w']) controls.moveForward(speed);
       if(keys['s']) controls.moveForward(-speed);
       if(keys['a']) controls.moveRight(-speed);
       if(keys['d']) controls.moveRight(speed);
     }
 
-    // Update bullets
-    bullets.forEach(bullet => {
-      bullet.position.addScaledVector(bullet.userData.velocity, deltaTime);
-      if(bullet.position.distanceTo(camera.position) > 100) {
-        bullet.userData.alive = false;
-        scene.remove(bullet);
+    // update bullets, enemies, loot
+    updateBullets(dt);
+    updateEnemies(dt);
+    updateLoot();
+
+    if(player.cooldown > 0) player.cooldown -= dt;
+
+    // animate worldGroup: hue shift etc
+    if(worldGroup && worldGroup.userData){
+      const ud = worldGroup.userData, rng = ud.rng;
+      // animate rings and platforms: slight rotation and hue cycling
+      if(ud.core){
+        ud.core.rotation.y += dt * 0.08;
+        ud.core.traverse(m=>{
+          if(m.material && m.material.emissive){
+            const t = (Date.now()*0.0002 + (rng.f()*10))%1;
+            try { m.material.emissive.setHSL((ud.baseHue + t)%1, 0.8, 0.06); } catch(e) {}
+          }
+        });
       }
-    });
-    bullets = bullets.filter(b => b.userData.alive);
-
-    checkBulletEnemyCollisions();
-
-    // Simple enemy AI
-    enemies.forEach(enemy => {
-      if(!enemy.userData.alive) return;
-      const dir = new THREE.Vector3().subVectors(camera.position, enemy.position).normalize();
-      enemy.position.addScaledVector(dir, 2 * deltaTime);
-    });
-
-    if(player.bulletCooldown > 0) {
-      player.bulletCooldown -= deltaTime;
+      // particles drift
+      if(ud.particles){
+        ud.particles.rotation.y += dt * 0.02;
+      }
     }
+
+    // HUD / FPS
+    frameCount++; fpsTimer += dt;
+    if(fpsTimer >= 1){
+      fpsEl.textContent = 'FPS: ' + frameCount; frameCount = 0; fpsTimer = 0;
+    }
+
+    // draw weapon HUD
+    drawWeaponHUD();
 
     renderer.render(scene, camera);
   }
 
-  // Input handling
-  let keys = {};
-  window.addEventListener('keydown', e => {
-    keys[e.key.toLowerCase()] = true;
-    if(e.key === ' ') e.preventDefault();
-  });
-  window.addEventListener('keyup', e => {
-    keys[e.key.toLowerCase()] = false;
-  });
-
-  window.addEventListener('mousedown', e => {
-    if(controls.isLocked) shootBullet();
-  });
-
-  // Setup fractal and rooms
-  function setupGame(seedStr, depth) {
-    // Clean up old scene children except camera and controls
-    scene.children = scene.children.filter(child => child.type === "PerspectiveCamera" || child === controls.getObject());
-
-    rng = new RNG(parseInt(seedStr) || 12345);
-    fractalGroup = new THREE.Group();
-    scene.add(fractalGroup);
-
-    fractalGroup.add(createFractalTunnel(depth));
-
-    enemies = [];
-    for(let i=1; i<=depth; i++) {
-      const room = createRoom(parseInt(seedStr), i);
-      fractalGroup.add(room);
-    }
-
-    currentWeapon = generateWeapon(parseInt(seedStr));
-    drawWeapon();
-
-    controls.getObject().position.set(0, 0, 2);
-    camera.position.copy(controls.getObject().position);
+  function drawWeaponHUD(){
+    wctx.clearRect(0,0,weaponCanvas.width,weaponCanvas.height);
+    wctx.fillStyle = '#ddd'; wctx.font = '13px monospace';
+    wctx.fillText('HP: ' + Math.max(0, Math.round(player.hp)) + '   Seed: ' + (deriveSeed(center.re, center.im, scale)), 8, 18);
   }
 
-  startBtn.onclick = () => {
-    const seed = seedInput.value.trim() || "12345";
-    const depth = Math.min(Math.max(parseInt(depthInput.value) || 3, 1), 10);
-    setupGame(seed, depth);
-  };
-
-  function init() {
+  // ---------- initial boot ----------
+  function initAll(){
     initThree();
+    scheduleMandelRender();
+    updateMandelInfo();
+    // initial random world
+    const p = pickPoint(Number(seedInput.value)||1337);
+    const derived = deriveSeed(p.re, p.im, scale);
+    const finalSeed = (Number(seedInput.value)||1337) * 9973 + derived;
+    const platforms = Math.max(3, Number(platformsInput.value)||6);
+    generateLevel(finalSeed, platforms);
     clock = new THREE.Clock();
     animate();
   }
 
-  init();
+  initAll();
+
+  // Expose some helpers for debugging
+  window._fractalWorld = { generateLevel, deriveSeed, center, scale, scene, camera };
 })();
 </script>
-
 </body>
 </html>
-
