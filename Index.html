@@ -268,7 +268,7 @@
     };
     scene.add(bullet);
     bullets.push(bullet);
-  }
+      }
   // Handle collisions bullet <-> enemy
   function checkBulletEnemyCollisions() {
     bullets.forEach(bullet => {
@@ -290,8 +290,11 @@
     bullets = bullets.filter(b => b.userData.alive);
   }
 
-  // Animate loop
+  // Animate loop with fixed FPS calculation
   let lastFrameTime = performance.now();
+  let frameCount = 0;
+  let fps = 0;
+  let fpsTimer = 0;
 
   function animate() {
     requestAnimationFrame(animate);
@@ -299,12 +302,18 @@
     deltaTime = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
-    // Update FPS counter based on deltaTime
-    if(deltaTime > 0) {
-      fpsCounter.textContent = "FPS: " + Math.round(1 / deltaTime);
+    // FPS calculation
+    frameCount++;
+    fpsTimer += deltaTime;
+
+    if(fpsTimer >= 1) {
+      fps = frameCount;
+      fpsCounter.textContent = "FPS: " + fps;
+      frameCount = 0;
+      fpsTimer = 0;
     }
 
-    // Update player movement
+    // Player movement
     if(controls.isLocked === true) {
       const speed = player.speed * deltaTime;
       if(keys['w']) controls.moveForward(speed);
@@ -342,7 +351,7 @@
     renderer.render(scene, camera);
   }
 
-  // Input
+  // Input handling
   let keys = {};
   window.addEventListener('keydown', e => {
     keys[e.key.toLowerCase()] = true;
@@ -362,7 +371,7 @@
       // cleanup previous scene children except camera & controls
       while(scene.children.length > 0) {
         let child = scene.children[0];
-        if(child.type === "PerspectiveCamera" || child.type === "Group" && child === controls.getObject()) {
+        if(child.type === "PerspectiveCamera" || (child.type === "Group" && child === controls.getObject())) {
           break;
         }
         scene.remove(child);
