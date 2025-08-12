@@ -268,7 +268,7 @@
     };
     scene.add(bullet);
     bullets.push(bullet);
-}
+  }
   // Handle collisions bullet <-> enemy
   function checkBulletEnemyCollisions() {
     bullets.forEach(bullet => {
@@ -292,7 +292,6 @@
 
   // Animate loop
   let lastFrameTime = performance.now();
-  let frames = 0, fps = 0, lastFpsUpdate = performance.now();
 
   function animate() {
     requestAnimationFrame(animate);
@@ -300,13 +299,9 @@
     deltaTime = (now - lastFrameTime) / 1000;
     lastFrameTime = now;
 
-    // FPS calc
-    frames++;
-    if(now - lastFpsUpdate > 1000) {
-      fps = frames;
-      frames = 0;
-      lastFpsUpdate = now;
-      fpsCounter.textContent = "FPS: " + fps;
+    // Update FPS counter based on deltaTime
+    if(deltaTime > 0) {
+      fpsCounter.textContent = "FPS: " + Math.round(1 / deltaTime);
     }
 
     // Update player movement
